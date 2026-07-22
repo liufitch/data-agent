@@ -1,0 +1,44 @@
+logging:
+  file:
+    enable: true       # 开启文件日志
+    level: INFO        # 文件日志级别：INFO及以上日志输出
+    path: logs         # 日志文件存放目录：项目下 logs 文件夹
+    rotation: "10 MB"  # 日志切割：单个日志文件达到10MB自动分割
+    retention: "7 days" # 日志保留时长：只保留最近7天日志
+  console:
+    enable: true        # 开启控制台打印日志
+    level: INFO         # 控制台日志级别：INFO
+
+db_meta:
+  host: localhost     # 数据库地址（本地）
+  port: 3306          # MySQL 默认端口
+  user: atguigu       # 账号
+  password: Atguigu.123 # 密码
+  database: meta      # 目标库：MySQL 元数据数据库
+
+db_dw:
+  host: localhost
+  port: 3306
+  user: atguigu
+  password: Atguigu.123
+  database: dw        # 目标库：MySQL 数据仓库
+
+qdrant:
+  host: localhost
+  port: 6333          # Qdrant向量数据库  默认端口
+  embedding_size: 1024 # 向量维度：向量长度为1024维
+
+embedding:             #向量化模型 embedding
+  host: localhost
+  port: 8081                  # 向量化服务端口
+  model: BAAI/bge-large-zh-v1.5 # 中文向量模型（主流开源中文Embedding模型）
+
+es:
+  host: localhost
+  port: 9200         # ES 默认端口
+  index_name: data_agent # 操作的索引名
+
+llm:
+  model_name: gpt-5.2-codex  # 大模型名称
+  api_key: <api_key>         # 密钥（需替换为真实密钥）
+  base_url: https://api.openai-proxy.org/v1 # 代理接口地址
