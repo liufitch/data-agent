@@ -2,7 +2,7 @@
 
 from typing import List
 from dataclasses import asdict
-
+from app.core.log import logger
 from elasticsearch import AsyncElasticsearch
 
 from app.entities.value_info import ValueInfo
@@ -52,3 +52,48 @@ class ValueESRepository:
                 operations.append(asdict(info))
 
             await self.client.bulk(operations=operations)
+
+    async def search(
+            self,
+            keyword: str,
+            score_threshold: float = 0.6,
+            limit: int = 5
+    ) -> List[ValueInfo]:
+        """
+        根据关键词检索 ES 中的字段取值数据
+        :param keyword: 检索关键词
+        :param score_threshold: 最小匹配分数阈值
+        :param limit: 最大返回条数
+        :return: 匹配的 ValueInfo 实体列表
+        """
+        # 空关键词直接返回空列表
+        keyword = keyword.strip()
+        if not keyword:
+            logger.warning("检索关键词为空，跳过 ES 查询")
+            return []
+
+        # 参数合法性校验与修正
+        if limit <= 0:
+            logger.warning(f"非法 limit 值 {limit}，已重置为默认值 5")
+            limit = 5
+        if score_threshold < 0.0:
+            logger.warning(f"非法分数阈值 {score_threshold}，已重置为默认值 0.6")
+            score_threshold = 0.6
+
+        try:
+            result = await self.client.search(
+                index=self.INDEX_NAME,
+                query={
+                    "match": {
+                        "value": keyword
+                    }
+                },
+                min_score=score_threshold,
+                size=limit
+            )
+
+            # 解析命中数据并转为实体
+            return [ValueInfo(**hit["_source"]) for hit in result["hits"]["hits"]]
+        except Exception:
+            logger.exception("ES 字段取值检索异常")
+            return []
