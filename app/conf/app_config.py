@@ -1,7 +1,7 @@
 # 日志配置
 from dataclasses import dataclass
 from pathlib import Path
-
+# 配置文件加载工具为OmegaConf
 from omegaconf import OmegaConf
 
 # 日志
