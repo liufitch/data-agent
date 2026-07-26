@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from app.api.routers import query_router
+from app.api.routers.query_router import query_router
 from app.core.lifespan import lifespan
 app = FastAPI()
 
