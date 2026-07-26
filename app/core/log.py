@@ -1,52 +1,71 @@
+import asyncio
 import sys
 from pathlib import Path
-from typing import Optional
 
 from loguru import logger
 
 from app.conf.app_config import app_config
+from app.core.context import request_id_ctx_var
 
-# 日志格式模板
-LOG_FORMAT = (
+# 日志格式（保留原有样式）
+log_format = (
     "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
     "<level>{level: <8}</level> | "
+    "<magenta>request_id - {extra[request_id]}</magenta> | "
     "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - "
     "<level>{message}</level>"
 )
 
-def init_logger() -> None:
-    """统一初始化 Loguru 日志，幂等执行"""
-    # 移除默认处理器
-    logger.remove()
+# 【核心】日志过滤器：每条日志触发时动态获取当前协程的 request_id
+def log_filter(record):
+    # 动态从上下文变量取值，异步隔离不串号
+    record["extra"]["request_id"] = request_id_ctx_var.get()
+    return True
 
-    log_conf = app_config.logging
-    # 控制台日志
-    if log_conf.console.enable:
-        logger.add(
-            sink=sys.stdout,
-            level=log_conf.console.level.upper(),
-            format=LOG_FORMAT,
-            enqueue=True  # 异步日志，提升并发性能
-        )
+# 清空默认处理器
+logger.remove()
 
-    # 文件日志
-    if log_conf.file.enable:
-        log_dir: Path = Path(log_conf.file.path)
-        # 确保日志目录存在
-        log_dir.mkdir(parents=True, exist_ok=True)
-        log_file = log_dir / "app.log"
+# 控制台日志
+if app_config.logging.console.enable:
+    logger.add(
+        sink=sys.stdout,
+        level=app_config.logging.console.level,
+        format=log_format,
+        filter=log_filter  # 挂载过滤器
+    )
 
-        logger.add(
-            sink=log_file,
-            level=log_conf.file.level.upper(),
-            format=LOG_FORMAT,
-            rotation=log_conf.file.rotation,
-            retention=log_conf.file.retention,
-            encoding="utf-8",
-            enqueue=True,
-            diagnose=False,  # 生产关闭详细堆栈，减少日志体积
-            backtrace=True   # 异常时打印完整调用栈
-        )
+# 文件日志
+if app_config.logging.file.enable:
+    log_path = Path(app_config.logging.file.path)
+    log_path.mkdir(parents=True, exist_ok=True)
+    logger.add(
+        sink=log_path / "app.log",
+        level=app_config.logging.file.level,
+        format=log_format,
+        filter=log_filter,  # 挂载过滤器
+        rotation=app_config.logging.file.rotation,
+        retention=app_config.logging.file.retention,
+        encoding="utf-8"
+    )
 
-# 项目启动时执行日志初始化
-init_logger()
+# ------------------- 测试代码 -------------------
+if __name__ == '__main__':
+    async def graph(request: str):
+        logger.info(f"执行业务逻辑: {request}")
+
+    async def test1():
+        request_id_ctx_var.set("request-1")
+        logger.info("test1 开始处理")
+        await asyncio.sleep(1)
+        await graph("request-1")
+
+    async def test2():
+        request_id_ctx_var.set("request-2")
+        logger.info("test2 开始处理")
+        await asyncio.sleep(1)
+        await graph("request-2")
+
+    async def main():
+        await asyncio.gather(test1(), test2())
+
+    asyncio.run(main())
