@@ -1,5 +1,5 @@
 # 负责实现dw数据库的读写操作
-from typing import Dict, List, Any
+from typing import Dict, List, Any,Optional
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.log import logger

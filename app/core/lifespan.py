@@ -19,11 +19,11 @@ async def lifespan(app: FastAPI):
     """
     logger.info("开始初始化客户端连接...")
     # 应用启动阶段
-    embedding_client_manager.init()
-    qdrant_client_manager.init()
-    es_client_manager.init()
-    meta_mysql_client_manager.init()
-    dw_mysql_client_manager.init()
+    # embedding_client_manager.init()
+    # qdrant_client_manager.init()
+    # es_client_manager.init()
+    # meta_mysql_client_manager.init()
+    # dw_mysql_client_manager.init()
     logger.info("所有客户端初始化完成")
     yield
 

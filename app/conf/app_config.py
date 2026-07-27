@@ -69,7 +69,12 @@ class AppConfig:
     es: ESConfig
     llm: LLMConfig
 
-config_file = Path(__file__).parents[2] / 'conf' / 'app_config.yaml'
+# 项目根目录（rag/）
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+config_file = BASE_DIR/'app'/'conf' / 'app_config.yaml'
+
+print("配置文件路径：", config_file)
+print("文件是否存在：", config_file.exists())
 # 1. 读取原始YAML配置
 context = OmegaConf.load(config_file)
 # 2. 基于数据类生成配置Schema（类型校验模板）
