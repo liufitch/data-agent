@@ -38,6 +38,7 @@ class QdrantConfig:
     host: str
     port: int
     embedding_size: int
+    timeout: int
 
 #向量化服务
 @dataclass

@@ -26,7 +26,8 @@ db_dw:
 qdrant:
   host: localhost
   port: 6333          # Qdrant向量数据库  默认端口
-  embedding_size: 1024 # 向量维度：向量长度为1024维
+  embedding_size: 1024 # 向量维度：向量长度为1024维，概念：你的 Embedding 模型输出一条文本向量，是一个多长的 float 数组。， 不同开源 Embedding 维度不同，如果切换模型，这里也要改
+  timeout: 10  #10s 公网远程推理服务：建议 15~30s内部局域网服务：5~10s 常规配置
 
 embedding:             #向量化模型 embedding
   host: 127.0.0.1
