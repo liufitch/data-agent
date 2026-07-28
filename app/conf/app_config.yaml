@@ -29,7 +29,7 @@ qdrant:
   embedding_size: 1024 # 向量维度：向量长度为1024维
 
 embedding:             #向量化模型 embedding
-  host: localhost
+  host: 127.0.0.1
   port: 8081                  # 向量化服务端口
   model: BAAI/bge-large-zh-v1.5 # 中文向量模型（主流开源中文Embedding模型）
 

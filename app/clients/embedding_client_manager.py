@@ -1,6 +1,7 @@
 from typing import Optional
 
 from langchain_huggingface import HuggingFaceEndpointEmbeddings
+from langchain_openai import OpenAIEmbeddings
 from langchain_core.embeddings import Embeddings
 
 from app.conf.app_config import EmbeddingConfig, app_config
@@ -9,7 +10,7 @@ from app.conf.app_config import EmbeddingConfig, app_config
 class EmbeddingClientManager:
     def __init__(self, config: EmbeddingConfig):
         self._config = config
-        self._client: Optional[HuggingFaceEndpointEmbeddings] = None
+        self._client: Optional[OpenAIEmbeddings] = None
 
     def _get_endpoint_url(self) -> str:
         """拼接向量服务地址"""
@@ -19,8 +20,11 @@ class EmbeddingClientManager:
         """初始化嵌入模型客户端，幂等执行"""
         if self._client is not None:
             return
-        self._client = HuggingFaceEndpointEmbeddings(
-            model=self._get_endpoint_url()
+
+        self._client = OpenAIEmbeddings(
+            model=self._config.model,
+            openai_api_base=f"{self._get_endpoint_url()}/v1/",
+            openai_api_key="dummy"  # 本地TEI不需要密钥，占位即可
         )
 
     @property

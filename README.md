@@ -11,7 +11,7 @@ deactivate
 # 3. 正常安装包
 pip3 install "fastapi[standard]" langchain_huggingface
 sqlalchemy omegaconf elasticsearch qdrant_client loguru langgraph
-langchain  langchain-openai
+langchain  langchain-openai jieba
 
 
 fastapi dev main.py
