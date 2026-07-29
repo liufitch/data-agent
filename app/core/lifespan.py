@@ -9,6 +9,8 @@ from app.clients.es_client_manager import es_client_manager
 from app.clients.mysql_client_manager import meta_mysql_client_manager, dw_mysql_client_manager
 from app.clients.qdrant_client_manager import qdrant_client_manager
 
+# @asynccontextmanager 是 contextlib.asynccontextmanager 提供的装饰器，用来快速实现异步上下文管理器。
+# 作用：搭配 async with 使用，统一管理「异步资源初始化 + 资源释放」。
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -25,7 +27,7 @@ async def lifespan(app: FastAPI):
     meta_mysql_client_manager.init()
     dw_mysql_client_manager.init()
     logger.info("所有客户端初始化完成")
-    yield
+    yield # 分界线，代码暂停在这里
 
     # 应用关闭阶段，确保资源有序释放
     logger.info("开始释放客户端资源...")
