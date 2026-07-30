@@ -1,8 +1,13 @@
 # 负责定义llm
 from langchain.chat_models import init_chat_model
+from typing import Optional
+
+from langchain_core.language_models import BaseChatModel
 
 from app.conf.app_config import app_config
 
+
+_llm: Optional[BaseChatModel] = None
 def create_llm():
     """创建 LLM 实例"""
     return init_chat_model(
@@ -14,4 +19,8 @@ def create_llm():
     )
 
 # 全局单例
-llm = create_llm()
+def get_llm():
+    global _llm
+    if _llm is None:
+        _llm = create_llm()
+    return _llm

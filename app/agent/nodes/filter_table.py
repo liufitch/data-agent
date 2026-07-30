@@ -7,7 +7,7 @@ from langchain_core.prompts import PromptTemplate
 from langgraph.runtime import Runtime
 
 from app.agent.context import DataAgentContext
-from app.agent.llm import llm
+from app.agent.llm import get_llm
 from app.agent.state import DataAgentState
 from app.core.log import logger
 from app.prompt.prompt_loader import load_prompt
@@ -42,7 +42,7 @@ async def filter_table(
             input_variables=["query", "table_infos"]
         )
         json_parser = JsonOutputParser()
-        chain = prompt_template | llm | json_parser
+        chain = prompt_template | get_llm() | json_parser
 
         # YAML 序列化表结构，保留中文、原有顺序
         table_yaml = yaml.dump(

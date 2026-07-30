@@ -54,8 +54,8 @@ async def run_test(collection_name: str = "my_collection", vec_size: int = 10):
             await client.create_collection(
                 collection_name=collection_name,
                 vectors_config=models.VectorParams(
-                    size=vec_size,
-                    distance=models.Distance.COSINE
+                    size=vec_size, #向量维度（如 text-embedding-ada-002=1536）
+                    distance=models.Distance.COSINE #距离计算方式 Cosine 文本 Embedding（最常用）
                 )
             )
             print(f"集合 {collection_name} 创建成功")

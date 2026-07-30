@@ -1,17 +1,22 @@
 # 负责定义召回字段信息的节点
 from typing import Dict, List
+
+from langchain_core.exceptions import OutputParserException
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import PromptTemplate
 from langgraph.runtime import Runtime
 
 from app.agent.context import DataAgentContext
-from app.agent.llm import llm
+from app.agent.llm import get_llm
 from app.agent.state import DataAgentState
 from app.core.log import logger
 from app.entities.column_info import ColumnInfo
 from app.prompt.prompt_loader import load_prompt
 
-
+from pydantic import BaseModel, Field
+# 定义期望输出结构
+class KeywordExpandResp(BaseModel):
+    keywords: list[str] = Field(description="召回字段信息后关键词列表")
 async def recall_column(
     state: DataAgentState,
     runtime: Runtime[DataAgentContext]
@@ -33,19 +38,36 @@ async def recall_column(
     column_qdrant_repo = runtime.context["column_qdrant_repository"]
 
     try:
+        llm = get_llm().with_structured_output(KeywordExpandResp)
         # 加载提示词并构建链路
         prompt_template = PromptTemplate(
             template=load_prompt("extend_keywords_for_column_recall"),
             input_variables=["query"],
         )
-        json_parser = JsonOutputParser()
-        chain = prompt_template | llm | json_parser
+        prompt_input = {"query": query}
+        full_prompt = prompt_template.format(**prompt_input)
+        log_text = f"""
+                          ========== LLM 输入Prompt 召回字段信息=========={prompt_input}
+                          ====================================
+                          """
+        logger.info(log_text)
 
-        # LLM 扩展关键词
-        extend_result = await chain.ainvoke({"query": query})
-        # 合并关键词并去重
-        all_keywords = list(set(keywords + extend_result))
-        logger.info(f"字段召回 - 合并后关键词列表: {all_keywords}")
+        all_keywords: List[str] = []
+        try:
+            # LLM 扩展关键词
+            raw_resp = await llm.ainvoke(full_prompt)
+            logger.info(f"LLM原始响应内容：{raw_resp.content}")
+            # 合并关键词并去重
+            all_keywords = list(set(keywords + raw_resp.keywords))
+            logger.info(f"字段召回 - 合并后关键词列表: {all_keywords}")
+        except OutputParserException as e:
+            logger.warning(f"【字段召回失败】模型未返回合法JSON，query={query}, err={str(e)}")
+            all_keywords = []
+        except Exception as e:
+            logger.error(f"【字段召回异常】query={query}", exc_info=e)
+            all_keywords = []
+
+
 
         # 向量召回，字典去重
         retrieved_cols_map: Dict[str, ColumnInfo] = {}

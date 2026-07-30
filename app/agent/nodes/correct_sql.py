@@ -6,7 +6,7 @@ from langchain_core.prompts import PromptTemplate
 from langgraph.runtime import Runtime
 
 from app.agent.context import DataAgentContext
-from app.agent.llm import llm
+from app.agent.llm import get_llm
 from app.agent.state import DataAgentState
 from app.core.log import logger
 from app.prompt.prompt_loader import load_prompt
@@ -52,7 +52,7 @@ async def correct_sql(
             input_variables=["query", "table_infos", "metric_infos", "date_info", "db_info", "sql", "error"]
         )
         str_parser = StrOutputParser()
-        chain = prompt_template | llm | str_parser
+        chain = prompt_template | get_llm() | str_parser
 
         invoke_params = {
             "query": query,

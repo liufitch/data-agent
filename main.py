@@ -2,11 +2,11 @@ from fastapi import FastAPI
 
 from app.api.routers.query_router import query_router
 from app.core.lifespan import lifespan
-app = FastAPI()
+app = FastAPI(lifespan=lifespan)
 
 # 注册路由
 app.include_router(query_router)
-app = FastAPI(lifespan=lifespan)
+
 
 
 import uuid
@@ -34,3 +34,17 @@ async def add_request_id_middleware(request: Request, call_next):
     response.headers["X-Request-Id"] = req_id
 
     return response
+
+
+
+# ====================== 新增下面这段 用于debug======================
+if __name__ == "__main__":
+    import uvicorn
+    # Debug 推荐先关闭 reload，规避多进程断点失效问题
+    uvicorn.run(
+        "main:app",
+        host="127.0.0.1",
+        port=8000,
+        reload=False,
+        log_level="info"
+    )

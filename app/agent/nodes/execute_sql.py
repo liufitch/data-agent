@@ -1,5 +1,5 @@
 # 负责定义执行SQL的节点
-
+import logging
 from typing import Dict, Any
 from langgraph.runtime import Runtime
 
@@ -41,5 +41,6 @@ async def execute_sql(
 
     except Exception:
         writer({"type": "progress", "step": "执行SQL", "status": "error"})
+        logger.info(f"sql:   :{sql}")
         logger.exception("SQL执行异常")
         raise
