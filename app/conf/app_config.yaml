@@ -32,7 +32,7 @@ qdrant:
 embedding:             #向量化模型 embedding
   host: 127.0.0.1
   port: 8081                  # 向量化服务端口
-  model: BAAI/bge-large-zh-v1.5 # 中文向量模型（主流开源中文Embedding模型）
+  model: /models/bge-large-zh-v1.5 # 中文向量模型（主流开源中文Embedding模型）
 
 es:
   host: localhost
@@ -40,6 +40,6 @@ es:
   index_name: data_agent # 操作的索引名
 
 llm:
-  model_name: gpt-5.2-codex  # 大模型名称
-  api_key: <api_key>         # 密钥（需替换为真实密钥）
-  base_url: https://api.openai-proxy.org/v1 # 代理接口地址
+  model_name: gpt-5.4  # 大模型名称
+  api_key:         # 密钥（需替换为真实密钥）
+  base_url: https://api.llm-token.cn/v1 # 代理接口地址
