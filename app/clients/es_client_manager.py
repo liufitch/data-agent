@@ -1,11 +1,10 @@
 import asyncio
-import uuid
-from typing import Optional, Dict, Any, List,cast
+from typing import Optional, Dict, Any, List,cast,AsyncGenerator
 from elasticsearch import AsyncElasticsearch,  BadRequestError, ApiError
 from elasticsearch.helpers import async_streaming_bulk
-import pandas as pd
+from sqlalchemy import text
 from app.conf.app_config import ESConfig, app_config
-
+import hashlib
 
 class ESClientManager:
     def __init__(self, es_config: ESConfig):
@@ -94,74 +93,52 @@ dim_field_list = [
     ("dim_date", "day")
 ]
 
+sql_parts = []
+for table, field in dim_field_list:
+    part = f"""
+SELECT DISTINCT
+    '{table}' AS dim_table,
+    '{field}' AS dim_field,
+    `{field}` AS field_value
+FROM {table}
+WHERE `{field}` IS NOT NULL
+    """
+    sql_parts.append(part.strip())
+
+final_sql = "\nUNION ALL\n".join(sql_parts)
+
+BATCH_FETCH_SIZE = 1000  # mysql每次预加载条数
 
 
+async def generate_es_bulk_actions() -> AsyncGenerator[dict, None]:
+    sql = text(final_sql)
+    # 分批读取，读完一批立刻释放mysql连接，不持有长连接
+    offset = 0
+    while True:
+        page_sql = text(f"{final_sql} LIMIT {offset}, {BATCH_FETCH_SIZE}")
+        rows_buffer = []
+        async with mysql_client_manager.dw_mysql_client_manager.engine.connect() as conn:
+            # 不使用stream！改用all()一次性读完当前分页，游标正常结束
+            result = await conn.execute(page_sql)
+            rows = result.all()
+            if not rows:
+                break
+            rows_buffer = rows
 
-async def es_test_demo():
-    client = es_client_manager.client
-    try:
-        # 1. 索引不存在才创建
-        if not await client.indices.exists(index=INDEX_NAME):
-            await client.indices.create(index=INDEX_NAME, mappings=VALUE_INFO_MAPPING,settings=VALUE_INFO_SETTINGS,)
-            print(f"索引 {INDEX_NAME} 创建成功")
-        else:
-            print(f"索引 {INDEX_NAME} 已存在，跳过创建")
-
-        # # 2. 构造bulk操作
-        # bulk_ops = []
-        # for doc in TEST_VALUE:
-        #     bulk_ops.append({"index": {"_index": INDEX_NAME}})
-        #     bulk_ops.append(doc)
-        #
-        # # 3. 批量写入并校验结果
-        # bulk_resp = await client.bulk(operations=bulk_ops, refresh=True)
-        # if bulk_resp.get("errors"):
-        #     print("部分数据写入失败", bulk_resp)
-        # else:
-        #     print("批量数据写入完成")
-        #
-        # # 4. 全文检索
-        # search_resp = await client.search(
-        #     index=INDEX_NAME,
-        #     query={"match": {"name": "brave"}}
-        # )
-        # print("\n检索结果：")
-        # for hit in search_resp["hits"]["hits"]:
-        #     print(f"文档内容: {hit['_source']}, 分数: {hit['_score']}")
-
-
-    except BadRequestError as e:
-        # 400 错误，比如索引已存在、mapping 语法错
-        print(f"请求错误: {e.status_code}, {e.message}")
-
-    except ApiError as e:
-        # 所有 ES API 错误的基类
-        print(f"ES API 错误: {e}")
-
-
-async def generate_es_bulk_actions() -> iter:
-    """遍历维度表，抽取DISTINCT唯一值，生成Bulk写入Action"""
-    for table_name, col_name in dim_field_list:
-        column_id = f"{table_name}.{col_name}"
-        sql = f"""
-            SELECT DISTINCT `{col_name}` AS val
-            FROM `{table_name}`
-            WHERE `{col_name}` IS NOT NULL AND TRIM(`{col_name}`) != ''
-        """
-        df = pd.read_sql(sql, con=mysql_client_manager.dw_mysql_client_manager.engine)
-        for _, row in df.iterrows():
-            val = str(row["val"]).strip()
-            doc_id = str(uuid.uuid4())
+        # mysql连接已经关闭！安全循环产出文档
+        for row in rows_buffer:
+            raw_key = f"{row.dim_table}|{row.dim_field}|{row.field_value}"
+            doc_id = hashlib.md5(raw_key.encode("utf-8")).hexdigest()
             yield {
-                "_index": INDEX_NAME,
+                "_index": "value_info",
                 "_id": doc_id,
                 "_source": {
-                    "id": doc_id,
-                    "value": val,
-                    "column_id": column_id
+                    "dim_table": row.dim_table,
+                    "dim_field": row.dim_field,
+                    "field_value": row.field_value
                 }
             }
-
+        offset += BATCH_FETCH_SIZE
 async def bulk_import_to_es(batch_size: int = 1000):
     success_count = 0
     errors: List[Dict[str, Any]] = []
