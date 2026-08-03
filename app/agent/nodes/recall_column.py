@@ -1,11 +1,11 @@
 # 负责定义召回字段信息的节点
 from typing import Dict, List
-
+import re
 from langchain_core.exceptions import OutputParserException
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import PromptTemplate
 from langgraph.runtime import Runtime
-
+from openai import APIStatusError
 from app.agent.context import DataAgentContext
 from app.agent.llm import get_llm
 from app.agent.state import DataAgentState
@@ -38,7 +38,8 @@ async def recall_column(
     column_qdrant_repo = runtime.context["column_qdrant_repository"]
 
     try:
-        llm = get_llm().with_structured_output(KeywordExpandResp)
+        # llm = get_llm().with_structured_output(KeywordExpandResp)
+        llm = get_llm()
         # 加载提示词并构建链路
         prompt_template = PromptTemplate(
             template=load_prompt("extend_keywords_for_column_recall"),
@@ -51,35 +52,82 @@ async def recall_column(
                           ====================================
                           """
         logger.info(log_text)
-
+        str_parser = JsonOutputParser()
         all_keywords: List[str] = []
         try:
             # LLM 扩展关键词
-            raw_resp = await llm.ainvoke(full_prompt)
-            logger.info(f"LLM原始响应内容：{raw_resp.content}")
+            ai_msg = await llm.ainvoke(full_prompt)
+            # 这里可以正常取 .content
+            logger.info(f"recall_column-LLM原始文本响应：{ai_msg.content}")
+            # 再执行解析
+            extend_result = str_parser.parse(ai_msg.content)
+
             # 合并关键词并去重
-            all_keywords = list(set(keywords + raw_resp.keywords))
+            all_keywords = list(set(keywords + extend_result))
             logger.info(f"字段召回 - 合并后关键词列表: {all_keywords}")
         except OutputParserException as e:
             logger.warning(f"【字段召回失败】模型未返回合法JSON，query={query}, err={str(e)}")
             all_keywords = []
         except Exception as e:
-            logger.error(f"【字段召回异常】query={query}", exc_info=e)
+            logger.error(f"【字段召回异常】query={query}", err={str(e)})
             all_keywords = []
 
 
 
         # 向量召回，字典去重
         retrieved_cols_map: Dict[str, ColumnInfo] = {}
+
+        BATCH_SIZE = 4
+        # 清除各类空白：空格、全角空格、零宽字符、换行、制表符
+        whitespace_pattern = re.compile(r'\s+')
+        # 判断是否具备有效语义：至少包含一个中文/英文/数字
+        valid_content_pattern = re.compile(r'[\u4e00-\u9fa5a-zA-Z0-9]')
+
+        valid_keywords = []
         for keyword in all_keywords:
-            if not keyword.strip():
+            raw = keyword
+            # 移除全部空白
+            clean = whitespace_pattern.sub('', raw)
+            if not clean:
+                logger.warning(f"【过滤】全部空白文本 raw={repr(raw)}")
                 continue
-            # 生成向量并检索
-            vec = await embedding_client.aembed_query(keyword)
-            col_list = await column_qdrant_repo.search(vec)
-            for col in col_list:
-                if col.id not in retrieved_cols_map:
-                    retrieved_cols_map[col.id] = col
+            # 校验：必须包含至少一个汉字、字母、数字
+            if not valid_content_pattern.search(clean):
+                logger.warning(f"【过滤】无有效语义，仅标点/符号 raw={repr(raw)}")
+                continue
+            if len(clean) > 400:
+                logger.warning(f"【过滤】文本过长 raw={clean[:100]}...")
+                continue
+            valid_keywords.append(clean)
+
+        # 分批召回
+        for start in range(0, len(valid_keywords), BATCH_SIZE):
+            batch_texts = valid_keywords[start: start + BATCH_SIZE]
+            try:
+                logger.warning(f"向量接口异常，关键词:{batch_texts}")
+                vecs = await embedding_client.aembed_documents(batch_texts)
+                for text, vec in zip(batch_texts, vecs):
+                    col_list = await column_qdrant_repo.search(vec)
+                    for col in col_list:
+                        retrieved_cols_map[col.id] = col
+            except APIStatusError as e:
+                err_msg = str(e)
+                logger.error(f"【批量召回字段异常】batch={batch_texts}, err={err_msg}", exc_info=True)
+                # 502 代表TEI宕机，直接终止本轮，不要再循环重试轰炸服务
+                if "502" in err_msg:
+                    logger.error("TEI服务崩溃(502)，停止本轮所有向量化任务，等待容器重启")
+                    break
+                # 非502错误，才降级串行重试
+                for text in batch_texts:
+                    try:
+                        vec = await embedding_client.aembed_query(text)
+                        col_list = await column_qdrant_repo.search(vec)
+                        for col in col_list:
+                            retrieved_cols_map[col.id] = col
+                    except Exception as ee:
+                        logger.error(f"【批量降级串行失败】text={text}, err={str(ee)}")
+            except Exception as e:
+                logger.error(f"【批量召回未知异常】batch={batch_texts}, err={str(e)}", exc_info=True)
 
         retrieved_columns = list(retrieved_cols_map.values())
         writer({"type": "progress", "step": "召回字段", "status": "success"})
@@ -89,5 +137,5 @@ async def recall_column(
 
     except Exception as exc:
         writer({"type": "progress", "step": "召回字段", "status": "error"})
-        logger.exception("召回字段信息发生异常")
+        logger.error(f"【召回字段信息发生异常】query={query}", err={str(exc)})
         raise

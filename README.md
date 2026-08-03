@@ -29,3 +29,34 @@ hf download BAAI/bge-large-zh-v1.5 --local-dir ./models/bge-large-zh-v1.5
 
 
 在 SwaggerUI 中可以查看在线文档：http://127.0.0.1:8000/docs
+
+问：
+统计各地区销量排行前三的商品
+
+流程图：
+
+    
+
+```mermaid
+flowchart TD
+    A["抽取关键词"] --> B["召回字段信息"]
+    A --> C["召回指标信息"]
+    A --> D["召回字段取值"]
+
+    B --> E["合并召回信息"]
+    C --> E
+    D --> E
+
+    E --> F["过滤指标信息"]
+    E --> G["过滤表格信息"]
+
+    F --> H["增加额外上下文"]
+    G --> H
+
+    H --> I["生成SQL"]
+    I --> J["校验SQL"]
+
+    J -- 有误 --> K["校正SQL"]
+    K --> L["执行SQL"]
+    J -- 无误 --> L["执行SQL"]
+```

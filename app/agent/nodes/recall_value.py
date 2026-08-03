@@ -39,9 +39,12 @@ async def recall_value(
     value_es_repo = runtime.context["value_es_repository"]
 
     extend_keywords: List[str] = []
+
+    str_parser = JsonOutputParser()
     try:
         # 结构化llm
-        llm = get_llm().with_structured_output(KeywordExpandResp)
+        # llm = get_llm().with_structured_output(KeywordExpandResp)
+        llm = get_llm()
         # 构建提示词与调用链路
         prompt_template = PromptTemplate(
             template=load_prompt("extend_keywords_for_value_recall"),
@@ -59,9 +62,12 @@ async def recall_value(
         logger.info(log_text)
 
         # 临时打印模型原始返回（定位模型闲聊问题，确认后可注释）
-
-        raw_resp = await llm.ainvoke(full_prompt)
-        logger.info(f"LLM原始响应内容：{raw_resp.content}")
+        # 修改为
+        ai_msg = await llm.ainvoke(full_prompt)
+        # 这里可以正常取 .content
+        logger.info(f"recall_value-LLM原始文本响应：{ai_msg.content}")
+        # 再执行解析
+        raw_resp = str_parser.parse(ai_msg.content)
 
 
         # ✅ 取出关键词数组
@@ -71,7 +77,7 @@ async def recall_value(
         logger.warning(f"【字段取值-关键词扩写失败】模型未返回合法JSON，query={query}, err={str(e)}")
         extend_keywords = []
     except Exception as e:
-        logger.error(f"【字段取值-关键词扩写异常】query={query}", exc_info=e)
+        logger.exception(f"【字段取值-关键词扩写异常】query={query}", exc_info=e)
         extend_keywords = []
 
     # ✅ 合并关键词 + 清洗 + 去重

@@ -24,7 +24,12 @@ class EmbeddingClientManager:
         self._client = OpenAIEmbeddings(
             model=self._config.model,
             openai_api_base=f"{self._get_endpoint_url()}/v1/",
-            openai_api_key="dummy"  # 本地TEI不需要密钥，占位即可
+            openai_api_key="dummy",  # 本地TEI不需要密钥，占位即可
+            timeout=self._config.timeout,
+            chunk_size=4,
+            # TEI 必须使用模型自身的 tokenizer。若保持默认值，LangChain
+            # 会先用 OpenAI tokenizer 生成 token ID，BGE 收到越界 ID 后会崩溃。
+            check_embedding_ctx_length=False,
         )
 
     @property

@@ -3,6 +3,8 @@ from typing import Optional, Dict, Any, List,cast,AsyncGenerator
 from elasticsearch import AsyncElasticsearch,  BadRequestError, ApiError
 from elasticsearch.helpers import async_streaming_bulk
 from sqlalchemy import text
+
+from app.clients import mysql_client_manager
 from app.conf.app_config import ESConfig, app_config
 import hashlib
 
@@ -130,7 +132,7 @@ async def generate_es_bulk_actions() -> AsyncGenerator[dict, None]:
             raw_key = f"{row.dim_table}|{row.dim_field}|{row.field_value}"
             doc_id = hashlib.md5(raw_key.encode("utf-8")).hexdigest()
             yield {
-                "_index": "value_info",
+                "_index": "data-agent-value",
                 "_id": doc_id,
                 "_source": {
                     "dim_table": row.dim_table,
@@ -162,7 +164,7 @@ async def bulk_import_to_es(batch_size: int = 1000):
         for err in slice_errors:
             print(err)
 
-import mysql_client_manager
+
 if __name__ == '__main__':
     mysql_client_manager.dw_mysql_client_manager.init()
     es_client_manager.init()

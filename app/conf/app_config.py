@@ -46,7 +46,7 @@ class EmbeddingConfig:
     host: str
     port: int
     model: str
-
+    timeout: int
 @dataclass
 class ESConfig:
     host: str
