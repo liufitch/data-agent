@@ -1,8 +1,10 @@
 import asyncio
 import random
-import hashlib
-from typing import Optional,List
+from pathlib import Path
+from typing import List, Optional
 import uuid
+
+from omegaconf import OmegaConf
 from qdrant_client import AsyncQdrantClient, models
 from qdrant_client.http.exceptions import UnexpectedResponse
 from qdrant_client.models import (
@@ -10,6 +12,7 @@ from qdrant_client.models import (
     KeywordIndexParams, TextIndexParams, TokenizerType
 )
 from app.conf.app_config import QdrantConfig, app_config
+from app.conf.meta_config import MetaConfig
 
 
 class QdrantClientManager:
@@ -52,6 +55,60 @@ qdrant_client_manager = QdrantClientManager(app_config.qdrant)
 COLUMN_COLL = "data-agent-column"
 METRIC_COLL = "data-agent-metric"
 VECTOR_DIM = 1024
+
+
+def _semantic_texts(row: dict) -> List[str]:
+    """提取适合短关键词召回的名称、描述和别名文本。"""
+    aliases = row.get("alias") or []
+    if not isinstance(aliases, list):
+        aliases = [aliases]
+    raw_texts = [row.get("name"), row.get("description"), *aliases]
+    return list(dict.fromkeys(str(text).strip() for text in raw_texts if text and str(text).strip()))
+
+
+def _point_id(collection_name: str, business_id: str, text: str) -> str:
+    """同一业务数据和语义文本始终生成相同 point ID，避免重复写入。"""
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{collection_name}:{business_id}:{text}"))
+
+
+async def _delete_business_points(collection_name: str, business_ids: List[str]) -> None:
+    """覆盖写入前删除同业务 ID 的旧点，包括历史随机向量和重复点。"""
+    if not business_ids:
+        return
+    await qdrant_client_manager.client.delete(
+        collection_name=collection_name,
+        points_selector=models.FilterSelector(
+            filter=models.Filter(
+                must=[
+                    models.FieldCondition(
+                        key="id",
+                        match=models.MatchAny(any=business_ids),
+                    )
+                ]
+            )
+        ),
+        wait=True,
+    )
+
+
+async def _delete_stale_business_points(collection_name: str, business_ids: List[str]) -> None:
+    """删除已不在当前元数据配置中的历史测试点。"""
+    if not business_ids:
+        return
+    await qdrant_client_manager.client.delete(
+        collection_name=collection_name,
+        points_selector=models.FilterSelector(
+            filter=models.Filter(
+                must_not=[
+                    models.FieldCondition(
+                        key="id",
+                        match=models.MatchAny(any=business_ids),
+                    )
+                ]
+            )
+        ),
+        wait=True,
+    )
 
 
 
@@ -136,34 +193,27 @@ async def insert_column_info_list(column_list: List[dict], embedding_func):
     client = qdrant_client_manager.client
     if client is None:
         raise RuntimeError("Qdrant AsyncClient 未初始化，请先调用 init()")
+    business_ids = [row["id"] for row in column_list]
+    await _delete_business_points(COLUMN_COLL, business_ids)
+
     points = []
     for row in column_list:
-        # 组装用于向量化的文本
-        alias_str = ",".join(row["alias"]) if isinstance(row["alias"], list) else str(row["alias"])
-        examples_str = ",".join([str(x) for x in row["examples"]]) if isinstance(row["examples"], list) else str(row["examples"])
-        embed_text = (
-            f"列名称：{row['name']}\n"
-            f"列类型：{row['type']}\n"
-            f"列角色：{row['role']}\n"
-            f"列描述：{row['description']}\n"
-            f"别名：{alias_str}\n"
-            f"示例值：{examples_str}"
-        )
-        # 获取embedding向量
-        vec = await embedding_func(embed_text)
-        point = PointStruct(
-            id=str(uuid.uuid4()),  # point主键uuid，和业务id分离
-            vector=vec,
-            payload=row  # payload直接存入原始字典，和截图结构一致
-        )
-        points.append(point)
+        for text in _semantic_texts(row):
+            # 组装文本 然后向量化
+            vec = await embedding_func(text)
+            points.append(PointStruct(
+                id=_point_id(COLUMN_COLL, row["id"], text),
+                vector=vec,
+                payload=row, # payload直接存入原始字典
+            ))
 
     # 批量upsert
     await client.upsert(
         collection_name=COLUMN_COLL,
-        points=points
+        points=points,
+        wait=True,
     )
-    print(f"✅ 成功写入 {len(points)} 条字段元数据")
+    print(f"✅ 成功写入 {len(points)} 条字段语义向量")
 
 
 async def insert_metric_info_list(metric_list: List[dict], embedding_func):
@@ -175,29 +225,25 @@ async def insert_metric_info_list(metric_list: List[dict], embedding_func):
     client = qdrant_client_manager.client
     if client is None:
         raise RuntimeError("Qdrant AsyncClient 未初始化，请先调用 init()")
+    business_ids = [row["id"] for row in metric_list]
+    await _delete_business_points(METRIC_COLL, business_ids)
+
     points = []
     for row in metric_list:
-        alias_str = ",".join(row["alias"]) if isinstance(row["alias"], list) else str(row["alias"])
-        rel_col_str = ",".join(row["relevant_columns"]) if isinstance(row["relevant_columns"], list) else str(row["relevant_columns"])
-        embed_text = (
-            f"指标名称：{row['name']}\n"
-            f"指标描述：{row['description']}\n"
-            f"关联字段：{rel_col_str}\n"
-            f"别名：{alias_str}"
-        )
-        vec = await embedding_func(embed_text)
-        point = PointStruct(
-            id=str(uuid.uuid4()),
-            vector=vec,
-            payload=row
-        )
-        points.append(point)
+        for text in _semantic_texts(row):
+            vec = await embedding_func(text)
+            points.append(PointStruct(
+                id=_point_id(METRIC_COLL, row["id"], text),
+                vector=vec,
+                payload=row,
+            ))
 
     await client.upsert(
         collection_name=METRIC_COLL,
-        points=points
+        points=points,
+        wait=True,
     )
-    print(f"✅ 成功写入 {len(points)} 条指标元数据")
+    print(f"✅ 成功写入 {len(points)} 条指标语义向量")
 
 
 async def run_test(collection_name: str = "my_collection", vec_size: int = 10):
@@ -245,104 +291,48 @@ async def run_test(collection_name: str = "my_collection", vec_size: int = 10):
         print(f"执行异常: {str(e)}")
 
 
-# ===================== 测试Demo=====================
-async def demo():
-    # 样例 column_info 数据
-    sample_columns = [
-    {
-        "id": "dim_region.region_name",
-        "name": "region_name",
-        "type": "varchar(50)",
-        "role": "dimension",
-        "examples": ["华东", "华南", "西南", "华北", "华中"],
-        "description": "订单所属的大区名称，如华东、华南等。",
-        "alias": ["地区", "区域", "大区"],
-        "table_id": "dim_region"
-    },
-    {
-        "id": "fact_order.order_amount",
-        "name": "order_amount",
-        "type": "decimal(18,2)",
-        "role": "measure",
-        "examples": [99.90, 199.50, 1299.00],
-        "description": "单笔订单的成交金额，单位为元，包含商品金额和运费。",
-        "alias": ["订单金额", "成交金额", "支付金额"],
-        "table_id": "fact_order"
-    },
-    {
-        "id": "fact_order.order_id",
-        "name": "order_id",
-        "type": "varchar(32)",
-        "role": "primary_key",
-        "examples": ["ORD202401010001", "ORD202401010002"],
-        "description": "订单唯一标识，系统生成的主键ID。",
-        "alias": ["订单号", "订单编号"],
-        "table_id": "fact_order"
-    },
-    {
-        "id": "dim_customer.customer_name",
-        "name": "customer_name",
-        "type": "varchar(100)",
-        "role": "dimension",
-        "examples": ["张三", "李四", "王五"],
-        "description": "客户的真实姓名，用于客户维度分析。",
-        "alias": ["客户姓名", "用户名", "客户名"],
-        "table_id": "dim_customer"
-    },
-    {
-        "id": "fact_order.create_time",
-        "name": "create_time",
-        "type": "datetime",
-        "role": "time_dimension",
-        "examples": ["2024-01-01 10:30:00", "2024-01-15 14:20:00"],
-        "description": "订单创建时间，即用户下单的时间戳。",
-        "alias": ["下单时间", "创建时间", "订单时间"],
-        "table_id": "fact_order"
-    }
-]
+async def demo(config_path: Optional[Path] = None):
+    """使用真实 Embedding 将完整元数据配置写入 Qdrant。"""
+    from app.clients.embedding_client_manager import embedding_client_manager
 
-    # 样例 metric_info 数据
-    sample_metrics = [
-    {
-        "id": "GMV",
-        "name": "GMV",
-        "description": "全称 Gross Merchandise Value，表示所有订单的成交金额总和。",
-        "relevant_columns": ["fact_order.order_amount"],
-        "alias": ["成交总额", "订单总额", "商品交易总额"]
-    },
-    {
-        "id": "order_count",
-        "name": "订单量",
-        "description": "统计周期内的有效订单总数量，不含已取消和退款订单。",
-        "relevant_columns": ["fact_order.order_id"],
-        "alias": ["订单数", "订单总量", "下单量"]
-    },
-    {
-        "id": "customer_count",
-        "name": "客户数",
-        "description": "统计周期内有下单行为的去重客户总数量。",
-        "relevant_columns": ["dim_customer.customer_name"],
-        "alias": ["用户数", "客户数量", "下单用户数"]
-    },
-    {
-        "id": "AOV",
-        "name": "客单价",
-        "description": "Average Order Value，平均每笔订单的成交金额，计算公式：GMV / 订单量。",
-        "relevant_columns": ["fact_order.order_amount", "fact_order.order_id"],
-        "alias": ["平均客单价", "单均金额", "平均订单金额"]
-    }
-]
+    if config_path is None:
+        config_path = Path(__file__).resolve().parents[2] / "conf" / "meta_config.yaml"
 
-    # ------------------- 这里替换成你真实的 Embedding 异步调用函数 -------------------
-    async def mock_embedding(text: str) -> list[float]:
-        """临时模拟embedding，上线替换成BGE-Large-Zh服务调用"""
-        seed = int(hashlib.md5(text.encode("utf-8")).hexdigest(), 16) % (2 ** 32)
-        rng = random.Random(seed)
-        return [rng.random() for _ in range(VECTOR_DIM)]
-    # ----------------------------------------------------------------------------
+    raw_config = OmegaConf.load(config_path)
+    schema = OmegaConf.structured(MetaConfig)
+    meta_config: MetaConfig = OmegaConf.to_object(OmegaConf.merge(schema, raw_config))
 
-    await insert_column_info_list(sample_columns, mock_embedding)
-    await insert_metric_info_list(sample_metrics, mock_embedding)
+    column_list = [
+        {
+            "id": f"{table.name}.{column.name}",
+            "name": column.name,
+            "type": "",
+            "role": column.role,
+            "examples": [],
+            "description": column.description,
+            "alias": column.alias,
+            "table_id": table.name,
+        }
+        for table in meta_config.tables
+        for column in table.columns
+    ]
+    metric_list = [
+        {
+            "id": metric.name,
+            "name": metric.name,
+            "description": metric.description,
+            "relevant_columns": metric.relevant_columns,
+            "alias": metric.alias,
+        }
+        for metric in meta_config.metrics
+    ]
+
+    embedding_client_manager.init()
+    embedding_func = embedding_client_manager.client.aembed_query
+    await _delete_stale_business_points(COLUMN_COLL, [row["id"] for row in column_list])
+    await _delete_stale_business_points(METRIC_COLL, [row["id"] for row in metric_list])
+    await insert_column_info_list(column_list, embedding_func)
+    await insert_metric_info_list(metric_list, embedding_func)
 
 
 

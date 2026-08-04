@@ -67,3 +67,5 @@ class DataAgentState(TypedDict):
     # 输出结果
     sql: str
     error: str
+
+    sql_retry_count: int  # 新增：SQL校正重试次数

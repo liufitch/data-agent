@@ -1,6 +1,5 @@
 # 负责定义langgraph图
-import asyncio
-from typing import Optional
+
 from langgraph.constants import START, END
 from langgraph.graph import StateGraph
 
@@ -19,7 +18,7 @@ from app.agent.nodes.recall_column import recall_column
 from app.agent.nodes.recall_metric import recall_metric
 from app.agent.nodes.recall_value import recall_value
 from app.agent.nodes.validate_sql import validate_sql
-
+from app.core.log import logger
 # 客户端管理器
 from app.clients.embedding_client_manager import embedding_client_manager
 from app.clients.es_client_manager import es_client_manager
@@ -87,16 +86,28 @@ def build_agent_graph() -> StateGraph:
     graph_builder.add_edge("generate_sql", "validate_sql")
 
     # ========== 条件分支：SQL校验分流 ==========
+
+    MAX_SQL_CORRECT_RETRY = 3 # 防止 更正sql和生成sql 两个节点来回调，限制次数
     def route_after_validate(state: DataAgentState) -> str:
         """SQL校验路由：无错误→执行SQL，有错误→校正SQL"""
-        return "execute_sql" if state.get("error") is None else "correct_sql"
+        error = state.get("error")
+        if error is None: # 不存在错误
+            return "execute_sql"
+
+        # 存在错误，判断是否达到重试上限
+        retry_cnt = state.get("sql_retry_count", 0)
+        if retry_cnt >= MAX_SQL_CORRECT_RETRY:
+            logger.warning("次数超过最大次数")
+            return "__end__"
+        return "correct_sql"
 
     graph_builder.add_conditional_edges(
         source="validate_sql",
         path=route_after_validate,
-        path_map={
+        path_map={ # 路由返回值 → 目标节点映射  路由函数返回 "execute_sql" → 流转到 execute_sql 节点
             "execute_sql": "execute_sql",
-            "correct_sql": "correct_sql"
+            "correct_sql": "correct_sql",
+            "__end__": "__end__"
         }
     )
 

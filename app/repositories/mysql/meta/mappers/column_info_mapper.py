@@ -25,9 +25,11 @@ class ColumnInfoMapper:
     @staticmethod
     def to_model(entity: ColumnInfo) -> ColumnInfoMySQL:
         """业务实体 → MySQL 数据库模型
-        注：entity.sync 为运行时临时字段，asdict 会自动携带，MySQL 模型忽略即可
+        注：entity.sync 为运行时临时字段，不写入 MySQL。
         """
-        return ColumnInfoMySQL(**asdict(entity))
+        data = asdict(entity)
+        data.pop("sync", None)
+        return ColumnInfoMySQL(**data)
 
     @staticmethod
     def to_entity_list(model_list: List[ColumnInfoMySQL]) -> List[ColumnInfo]:

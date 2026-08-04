@@ -32,6 +32,25 @@ class EmbeddingClientManager:
             check_embedding_ctx_length=False,
         )
 
+    # 这是自定义封装类的异步销毁方法，用来主动释放
+    # OpenAI SDK http 会话（httpx 底层连接池），关闭同步 / 异步 http 客户端，防止连接泄漏，最后把实例引用置空
+    async def close(self) -> None:
+        """关闭 OpenAI SDK 底层连接并重置客户端。"""
+        if self._client is None:
+            return
+        #安全取属性，属性不存在返回 None，不会抛 AttributeError
+        async_resource = getattr(self._client, "async_client", None)
+        async_owner = getattr(async_resource, "_client", None)
+        if async_owner is not None:
+            await async_owner.close()
+
+        sync_resource = getattr(self._client, "client", None)
+        sync_owner = getattr(sync_resource, "_client", None)
+        if sync_owner is not None:
+            sync_owner.close()
+
+        self._client = None
+
     @property
     def client(self) -> HuggingFaceEndpointEmbeddings:
         """安全获取客户端，非空校验"""

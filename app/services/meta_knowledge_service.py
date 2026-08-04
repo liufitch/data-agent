@@ -6,7 +6,7 @@ from pathlib import Path
 from dataclasses import asdict
 
 from langchain_huggingface import HuggingFaceEndpointEmbeddings
-from omegaconf import OmegaConf, ConfigDict
+from omegaconf import OmegaConf
 
 from app.conf.meta_config import MetaConfig
 from app.core.log import logger

@@ -53,7 +53,6 @@ async def recall_column(
                           """
         logger.info(log_text)
         str_parser = JsonOutputParser()
-        all_keywords: List[str] = []
         try:
             # LLM 扩展关键词
             ai_msg = await llm.ainvoke(full_prompt)
@@ -104,12 +103,19 @@ async def recall_column(
         for start in range(0, len(valid_keywords), BATCH_SIZE):
             batch_texts = valid_keywords[start: start + BATCH_SIZE]
             try:
-                logger.warning(f"向量接口异常，关键词:{batch_texts}")
+                logger.info(f"向量接口，关键词:{batch_texts}")
                 vecs = await embedding_client.aembed_documents(batch_texts)
-                for text, vec in zip(batch_texts, vecs):
+                #当 TEI 异常、实现有 bug 时，返回向量数量！= 请求文本数量 zip（） 静默截断，不会抛异常，导致部分关键词丢失召回
+                if len(vecs) != len(batch_texts):
+                    logger.warning(f"批量向量化返回向量数量不匹配！输入:{len(batch_texts)},输出:{len(vecs)}")
+                # 优先使用enumerate保证索引对齐
+                for idx, text in enumerate(batch_texts):
+                    vec = vecs[idx]
                     col_list = await column_qdrant_repo.search(vec)
+                    logger.info(f"向量数据库 ,文本:{text}，结果：{col_list}")
                     for col in col_list:
                         retrieved_cols_map[col.id] = col
+
             except APIStatusError as e:
                 err_msg = str(e)
                 logger.error(f"【批量召回字段异常】batch={batch_texts}, err={err_msg}", exc_info=True)

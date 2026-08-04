@@ -33,7 +33,7 @@ async def correct_sql(
     metric_infos = state.get("metric_infos", [])
     date_info = state.get("date_info", {})
     db_info = state.get("db_info", {})
-
+    current_retry = state.get("sql_retry_count", 0)
     # 前置校验：无原始SQL或无错误信息则直接终止
     if not sql:
         logger.warning("待校正 SQL 为空，跳过校正流程")
@@ -69,7 +69,11 @@ async def correct_sql(
 
         writer({"type": "progress", "step": "校正SQL", "status": "success"})
         logger.info(f"校正后 SQL: {corrected_sql}")
-        return {"sql": corrected_sql}
+        return {
+        "sql": corrected_sql,
+        "error": None,  # 清空旧错误，交给validate_sql重新校验
+        "sql_retry_count": current_retry + 1
+    }
 
     except Exception:
         writer({"type": "progress", "step": "校正SQL", "status": "error"})

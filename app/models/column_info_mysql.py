@@ -46,6 +46,13 @@ class ColumnInfoMySQL(Base):
         comment="数据示例"
     )
 
+    # 列业务描述
+    description: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="列描述"
+    )
+
     # 列别名（JSON结构）
     alias: Mapped[dict | list | None] = mapped_column(
         JSON,

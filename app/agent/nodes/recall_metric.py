@@ -68,7 +68,7 @@ async def recall_metric(
             logger.info(f"recall_metric-LLM原始文本响应：{ai_msg.content}")
             # 再执行解析
             extend_result = str_parser.parse(ai_msg.content)
-            extend_keywords = extend_result.get("keywords", [])
+            extend_keywords = [*extend_result]
         except OutputParserException as e:
             logger.warning(f"【关键词扩写失败】模型未返回合法JSON，query={query}, llm输出不符合规范, err={str(e)}")
             # 解析失败 → 扩展关键词置空，继续使用原始keywords
@@ -94,7 +94,6 @@ async def recall_metric(
         # 限流信号量，匹配TEI最大并发，防止请求风暴
         EMBED_SEMAPHORE = asyncio.Semaphore(8)
 
-        retrieved_cols_map = {}
 
         for keyword in all_keywords:
             raw = keyword
@@ -117,7 +116,7 @@ async def recall_metric(
             # 信号量控制并发
             try:
                 async with EMBED_SEMAPHORE:
-                    logger.warning(f"向量接口，关键词:{clean}")
+                    logger.info(f"向量接口，关键词:{clean}")
                     embedding = await embedding_client.aembed_query(clean)
             except openai.APIError as e:
                 err_msg = str(e)

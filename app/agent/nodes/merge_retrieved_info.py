@@ -31,11 +31,22 @@ async def merge_retrieved_info(
     meta_mysql_repo = runtime.context["meta_mysql_repository"]
 
     # 字段ID -> 字段实体 映射，全局去重
-    col_id_map: Dict[str, ColumnInfo] = {
-        col.id: col for col in retrieved_columns
-    }
+    col_id_map: Dict[str, ColumnInfo] = {}
 
     try:
+        # 用 meta 库中的完整字段信息补齐 Qdrant 召回结果，避免向量库
+        # 只保存了名称/描述而缺少真实类型、示例值等 schema 信息。
+        for col in retrieved_columns:
+            db_col = await meta_mysql_repo.get_column_info_by_id(col.id)
+            if db_col:
+                db_col.description = col.description or db_col.description
+                db_col.alias = col.alias or db_col.alias
+                if not db_col.examples:
+                    db_col.examples = col.examples
+                col_id_map[col.id] = db_col
+            else:
+                col_id_map[col.id] = col
+
         # 1. 根据指标关联字段，补充缺失字段
         for metric in retrieved_metrics:
             for col_id in metric.relevant_columns:
@@ -81,8 +92,6 @@ async def merge_retrieved_info(
         table_infos: List[TableInfoState] = []
         for table_id, col_list in table_col_map.items():
             table_entity = await meta_mysql_repo.get_table_info_by_id(table_id)
-            if not table_entity:
-                continue
 
             # 转换为状态结构体
             column_states = [
@@ -97,10 +106,24 @@ async def merge_retrieved_info(
                 for col in col_list
             ]
 
+            if table_entity:
+                table_name = table_entity.name
+                table_role = table_entity.role
+                table_description = table_entity.description
+            else:
+                # Qdrant payload 中的 table_id 是受控元数据来源。
+                # 即使 meta.table_info 漏了记录，也不能丢弃整张事实表。
+                table_name = table_id
+                table_role = "fact" if table_id.startswith("fact_") else "dim"
+                table_description = ""
+                logger.warning(
+                    f"meta.table_info 缺少表 {table_id}，使用字段召回结果构造临时表 schema"
+                )
+
             table_state = TableInfoState(
-                name=table_entity.name,
-                role=table_entity.role,
-                description=table_entity.description,
+                name=table_name,
+                role=table_role,
+                description=table_description,
                 columns=column_states
             )
             table_infos.append(table_state)

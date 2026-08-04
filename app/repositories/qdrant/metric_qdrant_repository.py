@@ -82,9 +82,15 @@ class MetricQdrantRepository:
                 collection_name=self.COLLECTION_NAME,
                 query=embedding,
                 score_threshold=score_threshold,
-                limit=limit
+                limit=limit * 4
             )
-            return [MetricInfo(**point.payload) for point in result.points]
+            metrics = {}
+            for point in result.points:
+                metric = MetricInfo(**point.payload)
+                metrics.setdefault(metric.id, metric)
+                if len(metrics) >= limit:
+                    break
+            return list(metrics.values())
         except Exception:
             logger.exception("Qdrant 指标向量检索异常")
             return []

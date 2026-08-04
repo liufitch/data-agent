@@ -3,6 +3,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from sqlalchemy import text  # 补上此行，解决 text 未引用
+from dataclasses import fields
 from app.entities.table_info import TableInfo
 from app.entities.column_info import ColumnInfo
 from app.entities.metric_info import MetricInfo
@@ -95,7 +96,9 @@ class MetaMySQLRepository:
         try:
             result = await self.session.execute(text(sql), {"table_id": table_id})
             rows = result.mappings().fetchall()
-            return [ColumnInfo(**row) for row in rows]
+            # 获取ColumnInfo所有合法字段名 --ColumnInfo 没有created_at 字段，sql 查出来了，但是不需要，过滤掉这些字段
+            valid_fields = {f.name for f in fields(ColumnInfo)}
+            return [ColumnInfo(**{k: v for k, v in row.items() if k in valid_fields}) for row in rows]
         except Exception:
             logger.exception(f"查询表主外键字段异常，table_id: {table_id}")
             return []

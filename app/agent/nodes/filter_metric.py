@@ -55,16 +55,21 @@ async def filter_metric(
             "query": query,
             "metric_infos": metric_yaml
         })
+        logger.info(f"指标过滤 LLM 原始结果: {llm_result}")
 
-        # 结果类型兜底
-        if not isinstance(llm_result, dict):
+        # prompt 约定返回指标名称数组，同时兼容历史字典格式。
+        if isinstance(llm_result, list):
+            keep_names = {str(name) for name in llm_result}
+        elif isinstance(llm_result, dict):
+            keep_names = set(llm_result.keys())
+        else:
             logger.warning("LLM 返回格式异常，保留全部指标")
+            #writer 是一个回调函数（消息推送器 / 事件发送器） 类似 stream_events，向外输出节点执行事件，外部监听消费流程状态
             writer({"type": "progress", "step": "过滤指标", "status": "success"})
             return {"metric_infos": metric_infos}
 
         # 新建列表收集结果，避免遍历过程中删除元素
         filtered_metrics = []
-        keep_names = set(llm_result.keys())
         for metric in metric_infos:
             metric_name = metric.get("name", "")
             if metric_name in keep_names:
@@ -74,7 +79,7 @@ async def filter_metric(
         logger.info(f"过滤后指标: {[m['name'] for m in filtered_metrics]}")
         return {"metric_infos": filtered_metrics}
 
-    except Exception:
+    except Exception as e:
         writer({"type": "progress", "step": "过滤指标", "status": "error"})
         logger.exception("过滤指标发生异常")
         raise

@@ -1,6 +1,5 @@
 # 用于指定待同步的表格和指标
-#该配置文件应由脚本调用方提供，所以该文件在项目中的路径不做要求，现暂将其置于data-agent/conf/meta_config:
-  yaml中:
+# 该配置文件应由脚本调用方提供，当前示例放在 data-agent/conf/meta_config.yaml 中。
 
 tables:
   - name: dim_region

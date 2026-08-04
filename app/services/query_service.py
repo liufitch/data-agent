@@ -58,7 +58,8 @@ class QueryService:
                 stream_mode="custom"
             ):
                 payload = json.dumps(chunk, ensure_ascii=False, default=str)
-                yield f"data: {payload}\n\n"
+                # SSE 格式统一由 query_router.sse_event_generator 负责封装。
+                yield payload
 
         except Exception as e:
             # 统一封装异常信息，向前端推送错误流
@@ -67,4 +68,4 @@ class QueryService:
                 "message": f"流程执行异常: {str(e)}"
             }
             payload = json.dumps(error_data, ensure_ascii=False, default=str)
-            yield f"data: {payload}\n\n"
+            yield payload

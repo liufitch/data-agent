@@ -83,10 +83,15 @@ class ColumnQdrantRepository:
                 collection_name=self.COLLECTION_NAME,
                 query=embedding,
                 score_threshold=score_threshold,
-                limit=limit
+                limit=limit * 4
             )
-            # 映射为业务实体
-            return [ColumnInfo(**point.payload) for point in result.points]
+            columns = {}
+            for point in result.points:
+                column = ColumnInfo(**point.payload)
+                columns.setdefault(column.id, column)
+                if len(columns) >= limit:
+                    break
+            return list(columns.values())
         except Exception:
             logger.exception("Qdrant 字段检索异常")
             return []

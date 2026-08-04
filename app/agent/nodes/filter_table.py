@@ -55,6 +55,7 @@ async def filter_table(
             "query": query,
             "table_infos": table_yaml
         })
+        logger.info(f"表过滤 LLM 原始结果: {llm_result}")
 
         # 类型兜底，确保为字典
         if not isinstance(llm_result, dict):
@@ -78,8 +79,18 @@ async def filter_table(
                 col for col in table["columns"]
                 if col.get("name", "") in keep_col_names
             ]
-            table["columns"] = filtered_cols
-            filtered_tables.append(table)
+            if not filtered_cols:
+                continue
+
+            filtered_table = dict(table)
+            filtered_table["columns"] = filtered_cols
+            filtered_tables.append(filtered_table)
+
+        # 空对象或全空字段列表会让后续 SQL 节点收到无 schema 输入。
+        # 过滤模型无法做出有效选择时，保留召回到的候选 schema 继续生成 SQL。
+        if not filtered_tables:
+            logger.warning("表过滤结果为空，保留全部候选表与字段")
+            filtered_tables = table_infos
 
         writer({"type": "progress", "step": "过滤表格", "status": "success"})
         logger.info(f"过滤后数据表: {[t['name'] for t in filtered_tables]}")

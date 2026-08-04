@@ -38,7 +38,7 @@ async def recall_value(
 
     value_es_repo = runtime.context["value_es_repository"]
 
-    extend_keywords: List[str] = []
+
 
     str_parser = JsonOutputParser()
     try:
@@ -71,13 +71,13 @@ async def recall_value(
 
 
         # ✅ 取出关键词数组
-        extend_keywords = raw_resp.get("keywords", [])
+        extend_keywords = [*raw_resp]
 
     except OutputParserException as e:
         logger.warning(f"【字段取值-关键词扩写失败】模型未返回合法JSON，query={query}, err={str(e)}")
         extend_keywords = []
     except Exception as e:
-        logger.exception(f"【字段取值-关键词扩写异常】query={query}", exc_info=e)
+        logger.exception(f"【字段取值-关键词扩写异常】query={query},err={str(e)}")
         extend_keywords = []
 
     # ✅ 合并关键词 + 清洗 + 去重
