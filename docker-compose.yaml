@@ -1,0 +1,80 @@
+services:
+
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: Atguigu.123
+      MYSQL_USER: atguigu
+      MYSQL_PASSWORD: Atguigu.123
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      # 用于初始化 .mysql 下的dw.sql和meta.sql
+      - ./mysql:/docker-entrypoint-initdb.d
+    command:
+      --character-set-server=utf8mb4x
+      --collation-server=utf8mb4_general_ci
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.4.4
+    container_name: elasticsearch
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+        # Mac ARM64用户建议追加，避免ES启动异常
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+  kibana:
+    image: kibana:8.19.10
+    container_name: kibana
+    restart: unless-stopped
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    depends_on:
+      - elasticsearch
+
+  qdrant:
+    image: qdrant/qdrant:v1.18
+    container_name: qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"   # HTTP
+      - "6334:6334"   # gRPC
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+
+  embedding:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-arm64-latest
+    container_name: embedding
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8081:8081"
+    volumes: # 使用本地模型
+      - ./embedding/bge-large-zh-v1.5:/models/bge-large-zh-v1.5
+  # 重点：使用 command 传递启动参数！TEI不识别MODEL_ID环境变量
+  #强制指定 pooling cls bge-large-zh-v1.5 需要 CLS 池化；不指定会出现警告，极端情况向量结果异常
+    command: >
+      --model-id /models/bge-large-zh-v1.5
+      --port 8081
+      --hostname 0.0.0.0
+      --pooling cls
+      --max-concurrent-requests 16
+      --max-batch-tokens 16384
+      --max-batch-requests 4
+      --auto-truncate
+
+#顶层命名卷声明  docker 真实卷名称 = 项目目录名_es_data 项目文件夹叫 data-agent → 卷全名 data-agent_es_data
+volumes:
+  mysql_data:
+  es_data:
+  qdrant_data:
