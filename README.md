@@ -60,3 +60,6 @@ flowchart TD
     K --> L["执行SQL"]
     J -- 无误 --> L["执行SQL"]
 ```
+
+在目录下创建embedding文件夹，放bge模型，结构如下
+![img.png](img.png)
